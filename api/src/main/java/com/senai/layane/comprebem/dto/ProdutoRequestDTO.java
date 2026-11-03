@@ -7,6 +7,7 @@ public record ProdutoRequestDTO(
         String descricao,
         BigDecimal preco,
         String categoria,
-        String imagem
+        String imagem,
+        Integer quantidade
 ) {
 }

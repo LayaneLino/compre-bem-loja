@@ -1,56 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, TextInput, TouchableOpacity, Text, View, FlatList, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Keyboard,
+  TextInput,
+  TouchableOpacity,
+  Text,
+  View,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './App';
+import { buscarProdutos, cadastrarProduto, formatarPreco, type Produto } from './api';
 
-export type Produto = {
-  id: number;
-  nome: string;
-  preco: string;
-  descricao?: string;
-  imagem?: number;
-  quantidade?: number;
-};
-
-export const produtosIniciais: Produto[] = [
-  {
-    id: 1,
-    nome: 'Cadeira Confort Plus',
-    preco: 'R$ 349,90',
-    descricao: 'Cadeira ergonômica estofada, ideal para home office. Estrutura reforçada e altura regulável.',
-    imagem: require('./assets/produto-cadeira.png'),
-    quantidade: 12,
-  },
-  {
-    id: 2,
-    nome: 'Mesa Escritório Slim',
-    preco: 'R$ 459,00',
-    descricao: 'Mesa compacta com acabamento em MDF, ideal para espaços pequenos.',
-    imagem: require('./assets/produto-mesa.png'),
-    quantidade: 10,
-  },
-  {
-    id: 3,
-    nome: 'Luminária de Mesa LED',
-    preco: 'R$ 89,90',
-    descricao: 'Luminária com 3 níveis de intensidade e braço flexível.',
-    imagem: require('./assets/produto-luminaria.png'),
-    quantidade: 8,
-  },
-];
-
-type Props = NativeStackScreenProps<RootStackParamList, 'ListaProdutos'> & {
-  produtos: Produto[];
-  onAdicionarProduto: (produto: Produto) => void;
-};
+type Props = NativeStackScreenProps<RootStackParamList, 'ListaProdutos'>;
 
 const CHAVE_FAVORITOS = '@compre_bem:favoritos';
 const CHAVE_BUSCA = '@compre_bem:ultima_busca';
 
-function TelaListaProdutos({ navigation, produtos, onAdicionarProduto }: Props) {
-  const [favoritos, setFavoritos] = useState<number[]>([]);
+function TelaListaProdutos({ navigation }: Props) {
+  const [favoritos, setFavoritos] = useState<string[]>([]);
   const [busca, setBusca] = useState('');
+  const [buscaRestaurada, setBuscaRestaurada] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(CHAVE_FAVORITOS).then((salvo) => {
@@ -58,26 +31,24 @@ function TelaListaProdutos({ navigation, produtos, onAdicionarProduto }: Props) 
         try {
           const arrayParseado = JSON.parse(salvo);
           if (Array.isArray(arrayParseado)) {
-            setFavoritos(arrayParseado);
+            setFavoritos(arrayParseado.filter((id) => typeof id === 'string'));
           }
         } catch (e) {
-          console.error("Erro ao ler favoritos do AsyncStorage", e);
+          console.error('Erro ao ler favoritos do AsyncStorage', e);
         }
       }
     });
 
-    AsyncStorage.getItem(CHAVE_BUSCA).then((salvo) => {
-      if (salvo !== null) setBusca(salvo);
-    });
+    AsyncStorage.getItem(CHAVE_BUSCA)
+      .then((salvo) => {
+        if (salvo !== null) setBusca(salvo);
+      })
+      .finally(() => setBuscaRestaurada(true));
   }, []);
 
-  function alternarFavorito(id: number) {
+  function alternarFavorito(id: string) {
     setFavoritos((atual) => {
-      const listaAtual = Array.isArray(atual) ? atual : [];
-      const novo = listaAtual.includes(id)
-        ? listaAtual.filter((favId) => favId !== id)
-        : [...listaAtual, id];
-
+      const novo = atual.includes(id) ? atual.filter((favId) => favId !== id) : [...atual, id];
       AsyncStorage.setItem(CHAVE_FAVORITOS, JSON.stringify(novo));
       return novo;
     });
@@ -88,25 +59,66 @@ function TelaListaProdutos({ navigation, produtos, onAdicionarProduto }: Props) 
     AsyncStorage.setItem(CHAVE_BUSCA, texto);
   }
 
-  const produtosFiltrados = useMemo(() => {
-    const listaSegura = produtos || [];
-    const termoBusca = busca || '';
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [pagina, setPagina] = useState(0);
+  const [temMais, setTemMais] = useState(true);
+  const [carregando, setCarregando] = useState(false);
+  const [atualizando, setAtualizando] = useState(false);
+  const [erroApi, setErroApi] = useState('');
 
-    return listaSegura.filter((item) =>
-      item.nome.toLowerCase().includes(termoBusca.toLowerCase())
-    );
-  }, [produtos, busca]);
+  const ultimaRequisicao = useRef(0);
+
+  const carregarPagina = useCallback(async (numero: number, termo: string, substituir: boolean) => {
+    const requisicao = ++ultimaRequisicao.current;
+    setCarregando(true);
+    setErroApi('');
+
+    try {
+      const resultado = await buscarProdutos(numero, termo);
+      if (requisicao !== ultimaRequisicao.current) return;
+
+      setProdutos((atual) => (substituir ? resultado.produtos : [...atual, ...resultado.produtos]));
+      setPagina(resultado.pagina);
+      setTemMais(resultado.temMais);
+    } catch (e) {
+      if (requisicao !== ultimaRequisicao.current) return;
+      console.error('Erro ao buscar produtos na API', e);
+      setErroApi('Não foi possível carregar os produtos. Confira se a API está rodando e o endereço em api.ts.');
+    } finally {
+      if (requisicao === ultimaRequisicao.current) {
+        setCarregando(false);
+        setAtualizando(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!buscaRestaurada) return;
+    const timer = setTimeout(() => carregarPagina(0, busca, true), 400);
+    return () => clearTimeout(timer);
+  }, [busca, buscaRestaurada, carregarPagina]);
+
+  function carregarMais() {
+    if (carregando || !temMais || erroApi !== '' || produtos.length === 0) return;
+    carregarPagina(pagina + 1, busca, false);
+  }
+
+  function atualizarLista() {
+    setAtualizando(true);
+    carregarPagina(0, busca, true);
+  }
 
   const [nome, setNome] = useState('');
   const [preco, setPreco] = useState('');
   const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
   const inputPrecoRef = useRef<TextInput>(null);
   const [quantidade, setQuantidade] = useState('');
   const inputQuantidadeRef = useRef<TextInput>(null);
   const [descricao, setDescricao] = useState('');
   const inputDescricaoRef = useRef<TextInput>(null);
 
-  function validarESalvar() {
+  async function validarESalvar() {
     if (nome.trim() === '') {
       setErro('O nome não pode ficar vazio!');
       return;
@@ -130,21 +142,67 @@ function TelaListaProdutos({ navigation, produtos, onAdicionarProduto }: Props) 
       return;
     }
 
-    onAdicionarProduto({
-      id: Date.now(),
-      nome,
-      preco: `R$ ${precoNumerico.toFixed(2).replace('.', ',')}`,
-      descricao: descricao.trim() !== '' ? descricao : 'Sem descrição.',
-      imagem: require('./assets/produto-suporte.png'),
-      quantidade: quantidadeNumerica,
-    });
+    setSalvando(true);
+    try {
+      await cadastrarProduto({
+        nome: nome.trim(),
+        preco: precoNumerico,
+        descricao: descricao.trim() !== '' ? descricao.trim() : 'Sem descrição.',
+        quantidade: quantidadeNumerica,
+      });
 
-    setNome('');
-    setPreco('');
-    setQuantidade('');
-    setDescricao('');
-    setErro('');
-    Keyboard.dismiss();
+      setNome('');
+      setPreco('');
+      setQuantidade('');
+      setDescricao('');
+      setErro('');
+      Keyboard.dismiss();
+      carregarPagina(0, busca, true);
+    } catch (e) {
+      console.error('Erro ao cadastrar produto na API', e);
+      setErro('A API não aceitou o cadastro. Confira se ela está rodando.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function renderizarVazio() {
+    if (carregando) {
+      return <ActivityIndicator style={styles.espaco} size="large" color="#007AFF" />;
+    }
+    if (erroApi !== '') {
+      return (
+        <View style={styles.espaco}>
+          <Text style={styles.erro}>{erroApi}</Text>
+          <TouchableOpacity style={styles.botaoTentar} onPress={() => carregarPagina(0, busca, true)}>
+            <Text style={styles.textoBotaoTentar}>Tentar de novo</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <Text style={[styles.aviso, styles.espaco]}>
+        {busca.trim() !== '' ? `Nenhum produto encontrado para "${busca.trim()}".` : 'Nenhum produto cadastrado.'}
+      </Text>
+    );
+  }
+
+  function renderizarRodape() {
+    if (produtos.length === 0) return null;
+    if (carregando && !atualizando) {
+      return <ActivityIndicator style={styles.espaco} color="#007AFF" />;
+    }
+    if (erroApi !== '') {
+      return (
+        <TouchableOpacity style={[styles.botaoTentar, styles.espaco]} onPress={carregarMais}>
+          <Text style={styles.textoBotaoTentar}>Erro ao carregar mais. Tentar de novo</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (!temMais) {
+      return <Text style={[styles.aviso, styles.espaco]}>Fim da lista.</Text>;
+    }
+    return null;
   }
 
   return (
@@ -200,14 +258,23 @@ function TelaListaProdutos({ navigation, produtos, onAdicionarProduto }: Props) 
         />
 
         {erro !== '' && <Text style={styles.erro}>{erro}</Text>}
-        <TouchableOpacity style={styles.botaoSalvar} onPress={validarESalvar}>
-          <Text style={styles.textoBotaoSalvar}>Cadastrar produto</Text>
+        <TouchableOpacity
+          style={[styles.botaoSalvar, salvando && { opacity: 0.6 }]}
+          onPress={validarESalvar}
+          disabled={salvando}
+        >
+          <Text style={styles.textoBotaoSalvar}>{salvando ? 'Salvando...' : 'Cadastrar produto'}</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
-        data={produtosFiltrados}
-        keyExtractor={(item) => String(item.id)}
+        data={produtos}
+        keyExtractor={(item) => item.id}
+        onEndReached={carregarMais}
+        onEndReachedThreshold={0.4}
+        refreshControl={<RefreshControl refreshing={atualizando} onRefresh={atualizarLista} />}
+        ListEmptyComponent={renderizarVazio}
+        ListFooterComponent={renderizarRodape}
         renderItem={({ item }) => (
           <View style={styles.itemContainer}>
             <TouchableOpacity
@@ -215,8 +282,11 @@ function TelaListaProdutos({ navigation, produtos, onAdicionarProduto }: Props) 
               onPress={() => navigation.navigate('DetalheProduto', { produto: item })}
             >
               <Text style={styles.nome}>{item.nome}</Text>
-              <Text style={styles.preco}>{item.preco}</Text>
-              <Text style={{ fontSize: 12, color: '#666' }}>Estoque: {item.quantidade} unidades</Text>
+              <Text style={styles.preco}>{formatarPreco(item.preco)}</Text>
+              {item.categoria && <Text style={styles.detalhe}>{item.categoria}</Text>}
+              {item.quantidade !== undefined && (
+                <Text style={styles.detalhe}>Estoque: {item.quantidade} unidades</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.botaoFavorito} onPress={() => alternarFavorito(item.id)}>
@@ -282,6 +352,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2E7D32'
   },
+  detalhe: {
+    fontSize: 12,
+    color: '#666'
+  },
   botaoSalvar: {
     backgroundColor: '#007AFF',
     borderRadius: 8,
@@ -304,6 +378,28 @@ const styles = StyleSheet.create({
   favoritoTexto: {
     fontSize: 22,
     color: '#C62828'
+  },
+  espaco: {
+    margin: 24,
+  },
+  aviso: {
+    textAlign: 'center',
+    color: '#666',
+  },
+  botaoTentar: {
+    marginTop: 12,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  textoBotaoTentar: {
+    color: '#007AFF',
+    fontWeight: '600',
   },
 });
 
