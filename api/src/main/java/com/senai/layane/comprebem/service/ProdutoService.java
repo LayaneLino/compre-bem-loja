@@ -35,6 +35,17 @@ public class ProdutoService {
         return produtosPage.map(ProdutoResponseDTO::toDto);
     }
 
+    public Page<ProdutoResponseDTO> findByFiltro(String filtro, Pageable pageable) {
+        int size = pageable.getPageSize() > 50 ? 50 : pageable.getPageSize();
+        Pageable validPageable = PageRequest.of(pageable.getPageNumber(), size, pageable.getSort());
+
+        // Sem filtro, o texto vazio faz o LIKE '%%' trazer todos os produtos
+        String texto = filtro == null ? "" : filtro.trim();
+
+        return produtoRepository.findByFiltro(texto, validPageable)
+                .map(ProdutoResponseDTO::toDto);
+    }
+
     public ProdutoResponseDTO findById(UUID id) {
         var produto = produtoRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado"));

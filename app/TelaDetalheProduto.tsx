@@ -1,8 +1,16 @@
-import { useState } from 'react';
-import { View, Text, Image, StyleSheet, type ImageSourcePropType } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  type ImageSourcePropType,
+} from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './App';
-import { formatarPreco, type Produto } from './api';
+import { buscarProdutoPorId, formatarPreco, type Produto } from './api';
 
 function imagemReserva(produto: Produto): ImageSourcePropType {
   const nome = produto.nome.toLowerCase();
@@ -20,10 +28,10 @@ function DetalheProduto({ produto }: { produto: Produto }) {
   return (
     <View style={styles.container}>
       <Image source={fonteImagem} style={styles.imagem} onError={() => setImagemFalhou(true)} />
-      {produto.categoria && <Text style={styles.categoria}>{produto.categoria}</Text>}
+      {!!produto.categoria && <Text style={styles.categoria}>{produto.categoria}</Text>}
       <Text style={styles.nome}>{produto.nome}</Text>
       <Text style={styles.preco}>{formatarPreco(produto.preco)}</Text>
-      {produto.descricao && <Text style={styles.descricao}>{produto.descricao}</Text>}
+      {!!produto.descricao && <Text style={styles.descricao}>{produto.descricao}</Text>}
     </View>
   );
 }
@@ -31,7 +39,46 @@ function DetalheProduto({ produto }: { produto: Produto }) {
 type Props = NativeStackScreenProps<RootStackParamList, 'DetalheProduto'>;
 
 function TelaDetalheProduto({ route }: Props) {
-  const { produto } = route.params;
+  const { produtoId } = route.params;
+  const [produto, setProduto] = useState<Produto | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+
+  const carregarProduto = useCallback(async () => {
+    setCarregando(true);
+    setErro('');
+    try {
+      setProduto(await buscarProdutoPorId(produtoId));
+    } catch (e) {
+      console.error('Erro ao buscar o produto na API', e);
+      setErro('Não foi possível carregar o produto. Confira se a API está rodando.');
+    } finally {
+      setCarregando(false);
+    }
+  }, [produtoId]);
+
+  useEffect(() => {
+    carregarProduto();
+  }, [carregarProduto]);
+
+  if (carregando) {
+    return (
+      <View style={styles.centro}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  if (erro !== '' || !produto) {
+    return (
+      <View style={styles.centro}>
+        <Text style={styles.erro}>{erro || 'Produto não encontrado.'}</Text>
+        <TouchableOpacity style={styles.botaoTentar} onPress={carregarProduto}>
+          <Text style={styles.textoBotaoTentar}>Tentar de novo</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return <DetalheProduto produto={produto} />;
 }
@@ -39,6 +86,32 @@ function TelaDetalheProduto({ route }: Props) {
 export default TelaDetalheProduto;
 
 const styles = StyleSheet.create({
+  centro: {
+    flex: 1,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  erro: {
+    color: '#C62828',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  botaoTentar: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  textoBotaoTentar: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     padding: 20,

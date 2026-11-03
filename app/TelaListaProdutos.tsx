@@ -74,12 +74,12 @@ function TelaListaProdutos({ navigation }: Props) {
     setErroApi('');
 
     try {
-      const resultado = await buscarProdutos(numero, termo);
+      const resposta = await buscarProdutos(numero, termo);
       if (requisicao !== ultimaRequisicao.current) return;
 
-      setProdutos((atual) => (substituir ? resultado.produtos : [...atual, ...resultado.produtos]));
-      setPagina(resultado.pagina);
-      setTemMais(resultado.temMais);
+      setProdutos((atual) => (substituir ? resposta.content : [...atual, ...resposta.content]));
+      setPagina(resposta.page.number);
+      setTemMais(resposta.page.number + 1 < resposta.page.totalPages);
     } catch (e) {
       if (requisicao !== ultimaRequisicao.current) return;
       console.error('Erro ao buscar produtos na API', e);
@@ -269,7 +269,7 @@ function TelaListaProdutos({ navigation }: Props) {
 
       <FlatList
         data={produtos}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.produtoId}
         onEndReached={carregarMais}
         onEndReachedThreshold={0.4}
         refreshControl={<RefreshControl refreshing={atualizando} onRefresh={atualizarLista} />}
@@ -279,18 +279,18 @@ function TelaListaProdutos({ navigation }: Props) {
           <View style={styles.itemContainer}>
             <TouchableOpacity
               style={styles.itemConteudo}
-              onPress={() => navigation.navigate('DetalheProduto', { produto: item })}
+              onPress={() => navigation.navigate('DetalheProduto', { produtoId: item.produtoId })}
             >
               <Text style={styles.nome}>{item.nome}</Text>
               <Text style={styles.preco}>{formatarPreco(item.preco)}</Text>
-              {item.categoria && <Text style={styles.detalhe}>{item.categoria}</Text>}
-              {item.quantidade !== undefined && (
+              {!!item.categoria && <Text style={styles.detalhe}>{item.categoria}</Text>}
+              {item.quantidade != null && (
                 <Text style={styles.detalhe}>Estoque: {item.quantidade} unidades</Text>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.botaoFavorito} onPress={() => alternarFavorito(item.id)}>
-              <Text style={styles.favoritoTexto}>{favoritos.includes(item.id) ? '★' : '☆'}</Text>
+            <TouchableOpacity style={styles.botaoFavorito} onPress={() => alternarFavorito(item.produtoId)}>
+              <Text style={styles.favoritoTexto}>{favoritos.includes(item.produtoId) ? '★' : '☆'}</Text>
             </TouchableOpacity>
           </View>
         )}

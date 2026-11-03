@@ -37,8 +37,21 @@ public class ProdutoController {
         return produtoService.findAll(busca, pageable);
     }
 
+    @GetMapping("/filtro")
+    @Parameters({
+            @Parameter(name = "page", in = ParameterIn.QUERY, description = "Número da página (começa em 0)", schema = @Schema(type = "integer", defaultValue = "0")),
+            @Parameter(name = "size", in = ParameterIn.QUERY, description = "Quantidade de itens por página", schema = @Schema(type = "integer", defaultValue = "20")),
+            @Parameter(name = "sort", in = ParameterIn.QUERY, description = "Critério de ordenação (ex: nome,asc)", schema = @Schema(type = "string"))
+    })
+    public Page<ProdutoResponseDTO> findByFiltro(
+            @Parameter(description = "Texto buscado no nome ou na descrição (opcional, ignora maiúsculas/minúsculas)") @RequestParam(required = false) String filtro,
+            @Parameter(hidden = true) @PageableDefault(size = 20) Pageable pageable) {
+
+        return produtoService.findByFiltro(filtro, pageable);
+    }
+
     @GetMapping("/{id}")
-    public ProdutoResponseDTO findById(@PathVariable UUID id) {
+    public ProdutoResponseDTO findById(@PathVariable("id") UUID id) {
         return produtoService.findById(id);
     }
 
@@ -52,8 +65,8 @@ public class ProdutoController {
         return produtoService.update(produtoId, produto);
     }
 
-    @DeleteMapping("/{produtoId}")
-    public void delete(@PathVariable UUID produtoId) {
-        produtoService.delete(produtoId);
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable("id") UUID id) {
+        produtoService.delete(id);
     }
 }

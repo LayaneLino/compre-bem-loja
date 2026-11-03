@@ -3,11 +3,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import TelaListaProdutos from './TelaListaProdutos';
 import TelaDetalheProduto from './TelaDetalheProduto';
-import type { Produto } from './api';
 
 export type RootStackParamList = {
   ListaProdutos: undefined;
-  DetalheProduto: { produto: Produto };
+  DetalheProduto: { produtoId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
